@@ -1,43 +1,169 @@
-"""12주차 직접 쓰기 앱: 배포할 수 있는 대시보드를 처음부터 씁니다.
-
-쓰는 법
-1. 칸마다 주석의 할 일을 읽고 '# 여기에 씁니다' 아래에 코드를 씁니다. 번호(# 1-3 등)는 강의 PDF 제목의 번호입니다.
-2. 내 컴퓨터에서 python -m streamlit run app.py 로 확인하고, 다 쓰면 python 배포_전_점검.py 로 [고침]이 0인지 봅니다.
-3. requirements.txt도 직접 채웁니다(1-4). 먼저 배포_예제/를 보지 않고 써 봅니다. 막히면 PDF의 같은 번호 쪽을 봅니다.
-4. 개인 프로젝트: sales.csv를 출처가 분명한 공개 데이터로 바꾸고 질문, 위젯, 차트를 내 데이터에 맞춰 고칩니다.
-   차트 3개 이상과 위젯에 따라 바뀌는 숫자·차트가 프로젝트 최소 요건입니다.
-"""
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-COLORS = {"A": "#0072B2", "B": "#D55E00"}
-st.set_page_config(page_title="지점 실적 탐색", layout="wide")
-st.title("어느 지점의 실적이 더 좋은가")
-st.caption("출처: 수업용 가상 데이터(sales.csv) · 2026년 1~12월 지점별 월 실적 · 금액 단위: 백만원")
+st.set_page_config(page_title="Olist 이커머스 대시보드", page_icon="🛒", layout="wide")
 
-# 1-3 데이터 경로: app.py가 있는 폴더(HERE)를 기준으로 sales.csv를 읽는 load_data를 만듭니다(@st.cache_data).
-#     C:\Users\... 같은 내 컴퓨터 경로는 서버에 없습니다. 파일이 없으면 st.error로 안내하고 st.stop()으로 멈춥니다.
-#     읽은 표는 data에 담습니다. 열은 month, branch, sales, profit입니다.
-# 여기에 씁니다
+# ---------- 0. 스타일 ----------
+BLUE, ORANGE, GRAY = "#0072B2", "#D55E00", "#6B7280"
+st.markdown(
+    """
+    <style>
+    .block-container {padding-top: 2rem; max-width: 1300px;}
+    div[data-testid="stMetric"] {
+        background: #F5F8FB; border: 1px solid #DCE6F0; border-radius: 12px;
+        padding: 14px 18px;}
+    div[data-testid="stMetricLabel"] {color: #4B5563;}
+    .insight {background: #EEF6FF; border-left: 5px solid #0072B2; border-radius: 6px;
+        padding: 12px 16px; margin: 6px 0 14px 0; color: #1F2937;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# 2-2 위젯 세 개(11주차): 사이드바에 지점(A, B 여러 개 고르기), 월 범위(1~12), 표시 지표(매출, 영업이익).
-#     고른 지표 이름을 열 이름(sales, profit)으로 바꿔 metric에 담습니다.
-# 여기에 씁니다
+st.title("🛒 Olist 브라질 이커머스 대시보드")
+st.caption("출처: Olist, Brazilian E-Commerce Public Dataset (Kaggle) · 2016-09 ~ 2018-09 · 금액 단위: 브라질 헤알(R$)")
 
-# 빈 선택(11주차 2-3): 고른 지점과 월 범위의 행만 view에 담고, view가 비면 st.warning으로 안내한 뒤 st.stop()으로 멈춥니다.
-#     아래의 숫자, 차트, 표는 모두 view를 씁니다.
-# 여기에 씁니다
+HERE = Path(__file__).parent   # app.py가 있는 폴더
 
-# 3-1 지표 카드: 기간 합계와 표시 관측 수(행 수)를 카드 두 개로 보입니다.
-# 여기에 씁니다
 
-# 2-9 한글 확인과 차트 세 개: 서버에는 한글 글꼴이 없을 수 있어 세 차트 모두 Plotly로 그립니다(브라우저가 글자를 그림).
-#     차트 1 월별 추이(선), 차트 2 지점별 기간 합계(막대), 차트 3 지점별 기간 영업이익률(막대, 이익 합계 ÷ 매출 합계 × 100).
-#     화면을 세 열로 나눠 차례로 넣습니다.
-# 여기에 씁니다
+@st.cache_data
+def load_data():
+    return pd.read_csv(HERE / "olist_orders.csv")
 
-# 4-1 표와 CSV 저장(11주차): view를 표로 보이고, 지금 고른 데이터를 CSV로 내려받는 단추를 둡니다.
-# 여기에 씁니다
+
+data = load_data()
+
+# ---------- 1. 사이드바 위젯 ----------
+months_all = sorted(data["month"].unique())
+months_main = [m for m in months_all if "2017-01" <= m <= "2018-08"]   # 주문이 충분한 기간
+status_all = data["order_status"].value_counts().index.tolist()
+top_categories = (data.groupby("category")["price"].sum()
+                  .sort_values(ascending=False).index.tolist())
+
+st.sidebar.header("조회 조건")
+period = st.sidebar.select_slider("기간(월)", options=months_main,
+                                  value=(months_main[0], months_main[-1]))
+statuses = st.sidebar.multiselect("주문 상태", status_all, default=["delivered"])
+categories = st.sidebar.multiselect("상품 카테고리", top_categories, default=top_categories[:8])
+metric_label = st.sidebar.selectbox("표시 지표", ["매출", "주문 수"])
+st.sidebar.caption("카테고리 기본값은 매출 상위 8개입니다.")
+
+# ---------- 2. 필터와 빈 선택 ----------
+view = data.loc[data["order_status"].isin(statuses)
+                & data["category"].isin(categories)
+                & data["month"].between(period[0], period[1])].copy()
+if view.empty:
+    st.warning("표시할 데이터가 없습니다. 주문 상태와 카테고리를 하나 이상 선택하세요.")
+    st.stop()
+
+
+def summarize(frame, by):
+    """by 기준으로 매출(price 합계)과 주문 수(order_id 고유 개수)를 계산합니다."""
+    return (frame.groupby(by, as_index=False)
+            .agg(sales=("price", "sum"), orders=("order_id", "nunique")))
+
+
+metric = {"매출": "sales", "주문 수": "orders"}[metric_label]
+unit = "R$" if metric == "sales" else "건"
+
+# ---------- 3. 지표 카드 ----------
+total_sales = view["price"].sum()
+total_orders = view["order_id"].nunique()
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("매출 합계", f"R$ {total_sales / 1_000_000:,.2f}M")   # M = 백만(카드 안에서 잘리지 않게 줄여 씁니다)
+c2.metric("주문 수", f"{total_orders:,} 건")
+c3.metric("평균 주문 금액", f"R$ {total_sales / total_orders:,.0f}")
+c4.metric("평균 리뷰 점수", f"{view['review_score'].mean():.2f} / 5")
+
+# ---------- 4. 핵심 요약(선택 조건에 맞춰 자동으로 바뀝니다) ----------
+monthly = summarize(view, "month").sort_values("month")
+by_cat = summarize(view, "category").sort_values(metric, ascending=False)
+peak = monthly.loc[monthly[metric].idxmax()]
+best_cat = by_cat.iloc[0]
+share = best_cat[metric] / by_cat[metric].sum() * 100
+fmt = (lambda v: f"R$ {v:,.0f}") if metric == "sales" else (lambda v: f"{v:,.0f} 건")
+st.markdown(
+    f'<div class="insight"><b>핵심 요약</b> · 선택한 조건에서 {metric_label}이 가장 큰 달은 '
+    f'<b>{peak["month"]}</b>({fmt(peak[metric])})이고, 가장 큰 카테고리는 '
+    f'<b>{best_cat["category"]}</b>로 전체의 <b>{share:.0f}%</b>를 차지합니다.</div>',
+    unsafe_allow_html=True,
+)
+
+# ---------- 5. 탭 ----------
+tab1, tab2, tab3, tab4 = st.tabs(["📈 추이와 카테고리", "🗺️ 지역", "⭐ 리뷰와 배송", "📋 표와 내려받기"])
+
+with tab1:
+    left, right = st.columns(2)
+    trend = px.line(monthly, x="month", y=metric, markers=True,
+                    labels={"month": "월", metric: f"{metric_label} ({unit})"},
+                    title=f"월별 {metric_label}", color_discrete_sequence=[BLUE])
+    trend.update_yaxes(rangemode="tozero")
+    left.plotly_chart(trend, width="stretch")
+
+    top10 = by_cat.head(10).sort_values(metric)
+    bar = px.bar(top10, x=metric, y="category", orientation="h",
+                 labels={"category": "카테고리", metric: f"{metric_label} ({unit})"},
+                 title=f"카테고리별 {metric_label} (상위 10개)", color_discrete_sequence=[BLUE])
+    right.plotly_chart(bar, width="stretch")
+
+with tab2:
+    by_state = summarize(view, "customer_state").sort_values(metric, ascending=False)
+    top_state = by_state.iloc[0]
+    st.markdown(
+        f'<div class="insight">{metric_label}이 가장 큰 주(State)는 <b>{top_state["customer_state"]}</b>이며 '
+        f'전체의 <b>{top_state[metric] / by_state[metric].sum() * 100:.0f}%</b>입니다.</div>',
+        unsafe_allow_html=True)
+    left, right = st.columns(2)
+    state_fig = px.bar(by_state.head(10), x="customer_state", y=metric,
+                       labels={"customer_state": "주(State)", metric: f"{metric_label} ({unit})"},
+                       title=f"주별 {metric_label} (상위 10개)", color_discrete_sequence=[BLUE])
+    left.plotly_chart(state_fig, width="stretch")
+
+    delivery_state = (view.dropna(subset=["delivery_days"]).groupby("customer_state", as_index=False)
+                      .agg(days=("delivery_days", "mean"), n=("order_id", "nunique")))
+    delivery_state = delivery_state[delivery_state["n"] >= 30].sort_values("days", ascending=False).head(10)
+    days_fig = px.bar(delivery_state.sort_values("days"), x="days", y="customer_state", orientation="h",
+                      labels={"days": "평균 배송일(일)", "customer_state": "주(State)"},
+                      title="평균 배송일이 긴 주 (주문 30건 이상)", color_discrete_sequence=[ORANGE])
+    right.plotly_chart(days_fig, width="stretch")
+
+with tab3:
+    reviewed = view.dropna(subset=["review_score"]).copy()
+    reviewed["score"] = reviewed["review_score"].round().astype(int)
+    dist = reviewed.groupby("score", as_index=False).agg(orders=("order_id", "nunique"))
+    left, right = st.columns(2)
+    dist_fig = px.bar(dist, x="score", y="orders",
+                      labels={"score": "리뷰 점수", "orders": "주문 수(건)"},
+                      title="리뷰 점수 분포", color_discrete_sequence=[BLUE])
+    dist_fig.update_xaxes(dtick=1)
+    left.plotly_chart(dist_fig, width="stretch")
+
+    delivered = reviewed.dropna(subset=["delivery_days"])
+    by_score = delivered.groupby("score", as_index=False).agg(days=("delivery_days", "mean"))
+    days_score = px.bar(by_score, x="score", y="days",
+                        labels={"score": "리뷰 점수", "days": "평균 배송일(일)"},
+                        title="리뷰 점수별 평균 배송일", color_discrete_sequence=[ORANGE])
+    days_score.update_xaxes(dtick=1)
+    right.plotly_chart(days_score, width="stretch")
+    if len(by_score) >= 2:
+        low = by_score.loc[by_score["score"].idxmin()]
+        high = by_score.loc[by_score["score"].idxmax()]
+        st.markdown(
+            f'<div class="insight">리뷰 {int(low["score"])}점 주문은 평균 <b>{low["days"]:.1f}일</b>, '
+            f'{int(high["score"])}점 주문은 평균 <b>{high["days"]:.1f}일</b> 만에 도착했습니다. '
+            f'배송이 늦을수록 리뷰 점수가 낮은 경향이 있습니다(상관관계이며 원인을 단정할 수는 없습니다).</div>',
+            unsafe_allow_html=True)
+
+with tab4:
+    table = summarize(view, ["month", "category"]).sort_values(["month", "sales"], ascending=[True, False])
+    table = table.rename(columns={"month": "월", "category": "카테고리", "sales": "매출(R$)", "orders": "주문 수"})
+    table["매출(R$)"] = table["매출(R$)"].round(0)
+    st.dataframe(table, hide_index=True, width="stretch")
+    st.download_button("현재 선택 CSV 저장", data=table.to_csv(index=False).encode("utf-8-sig"),
+                       file_name="olist_selected.csv", mime="text/csv")
+
+st.divider()
+st.caption("교육용 개인 프로젝트 · 데이터: Olist (Kaggle, 공개 데이터) · 매출은 상품 가격(price) 합계이며 배송비는 제외했습니다.")
